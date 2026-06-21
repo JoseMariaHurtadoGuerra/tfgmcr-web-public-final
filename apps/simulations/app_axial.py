@@ -1,14 +1,14 @@
-
+#estudiamos cómo se comportan los FF axial y pseudoescalar del nucleón comparando distintas parametrizaciones
 from __future__ import annotations
 
-import math
-import io
-from dataclasses import dataclass
+import math #mates básicas
+import io  #BytesIO permite guardar figuras en memoria para descargarlas 
+from dataclasses import dataclass #creacion de estructuras ligeras para describir curvas
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import streamlit as st
+import matplotlib.pyplot as plt #graficamos figuras
+import numpy as np #calculos numericos vectorizados
+import pandas as pd #construye tablas para mostrar valores numericos
+import streamlit as st #importante para convertirlo todo luego en una interfaz web interactiva
 
 
 
@@ -32,54 +32,55 @@ T0_Z_DEFAULT = -0.28            # elección habitual para mejorar la convergenci
 Z_PRESET_DIPOLE_LIKE = np.array([-1.69, 0.20, 2.31, -1.15])
 Z_PRESET_SLOW_FALL = np.array([-1.66, 0.098, 2.2245, -0.9325])
 
-
+#degfinimos una clase ligera para describir cada curva que se pintará
 @dataclass(frozen=True)
 class CurveSpec:
-    label: str
-    mass: float
-    linestyle: str
-    linewidth: float = 2.2
-    alpha: float = 1.0
+    label: str  #nombre de la curva en la leyenda
+    mass: float  #masa axial en coma flotante
+    linestyle: str  #estilo de linea
+    linewidth: float = 2.2 #grosor
+    alpha: float = 1.0 #transparencia
 
 
 
 #Modelo físico
 
+#definimos tau
 def tau(q2: np.ndarray | float) -> np.ndarray | float:
     return np.asarray(q2) / (4.0 * M_N**2)
 
-
+#modelo dipolar para G_A
 def ga_dipole(q2: np.ndarray | float, m_a: float, g_a0: float = G_A0) -> np.ndarray:
     q2 = np.asarray(q2, dtype=float)
     return g_a0 / (1.0 + q2 / m_a**2) ** 2
 
-
+#modelo monopolar
 def ga_monopole(q2: np.ndarray | float, m_a: float, g_a0: float = G_A0) -> np.ndarray:
     q2 = np.asarray(q2, dtype=float)
     return g_a0 / (1.0 + q2 / m_a**2)
 
-
+#modelo de dos componenetes
 def ga_two_component(
     q2: np.ndarray | float,
-    alpha: float,
-    gamma: float,
-    m_a1: float = M_A1,
+    alpha: float, #definimos alpha
+    gamma: float, #definimos gamma
+    m_a1: float = M_A1, #llamamos a M_A1 el valor del meson axial a1, sesgun aparece en la memoria
     g_a0: float = G_A0,
 ) -> np.ndarray:
     q2 = np.asarray(q2, dtype=float)
-    intrinsic = 1.0 / (1.0 + gamma * q2) ** 2
-    meson_cloud = 1.0 - alpha + alpha * m_a1**2 / (m_a1**2 + q2)
+    intrinsic = 1.0 / (1.0 + gamma * q2) ** 2 #contribución intrínseca de 3 quarks
+    meson_cloud = 1.0 - alpha + alpha * m_a1**2 / (m_a1**2 + q2) # contribución asociada a la nube mesónica
     return g_a0 * intrinsic * meson_cloud
 
-
+#definimos soft pion para valores concretos de alpha y gamma. Misma normalización en el origen
 def ga_two_component_softpion(q2: np.ndarray | float, g_a0: float = G_A0) -> np.ndarray:
     return ga_two_component(q2, ALPHA_SOFTPION, GAMMA_SOFTPION, g_a0=g_a0)
 
-
+#pcac para los valores específicos de alpha y gamma
 def ga_two_component_pcac(q2: np.ndarray | float, g_a0: float = G_A0) -> np.ndarray:
     return ga_two_component(q2, ALPHA_PCAC_2C, GAMMA_PCAC_2C, g_a0=g_a0)
 
-
+#definimos la variable de nachtmann para la parametrización BBBBA07
 def xi_nachtmann_elastic(q2: np.ndarray | float, m_n: float = M_N) -> np.ndarray:
     """Variable de Nachtmann elástica usada en BBBA2007."""
     q2 = np.asarray(q2, dtype=float)
@@ -89,7 +90,7 @@ def xi_nachtmann_elastic(q2: np.ndarray | float, m_n: float = M_N) -> np.ndarray
     xi[mask] = 2.0 / (1.0 + np.sqrt(1.0 + 1.0 / tau_n[mask]))
     return xi
 
-
+#interpolación de lagrange para el modelo 
 def lagrange_interpolator(x: np.ndarray | float, nodes: np.ndarray, values: np.ndarray) -> np.ndarray:
     """Interpolación de Lagrange evaluada en x."""
     x = np.asarray(x, dtype=float)
@@ -102,19 +103,19 @@ def lagrange_interpolator(x: np.ndarray | float, nodes: np.ndarray, values: np.n
         y += values[j] * basis
     return y
 
-
+#se construye la función A que depende de chi y le da el caracter oscilatorio a G_A
 def afa_bbba07_correction(q2: np.ndarray | float) -> np.ndarray:
     """Función correctora A_FA^{25}(xi) de BBBA2007."""
     xi = xi_nachtmann_elastic(q2)
     return lagrange_interpolator(xi, BBBA07_XI_NODES, BBBA07_AFA_COEFFS)
 
-
+#se construye ahora G_A para 3BA07
 def ga_bbba07(q2: np.ndarray | float, g_a0: float = G_A0) -> np.ndarray:
     """Factor de forma axial BBBA2007."""
     q2 = np.asarray(q2, dtype=float)
     return ga_dipole(q2, M_A_BBBA07, g_a0=g_a0) * afa_bbba07_correction(q2)
 
-#definimos la variable z
+#definimos la variable z en función de Q2, tcut y t0
 def z_conformal(
     q2: np.ndarray | float,
     t0: float = T0_Z_DEFAULT,
@@ -126,7 +127,12 @@ def z_conformal(
     sqrt_ref = np.sqrt(t_cut - t0)
     return (sqrt_num - sqrt_ref) / (sqrt_num + sqrt_ref)
 
-
+#ajuste automatico de coeficientes z. Esta elección se usa para que la z expansion reproduzca aproximadamente un dipolo
+#La idea es:
+#construimos una malla de Q2
+#calculamos el dipolo normalizado
+#construimos una matriz de diseño con potencias de z
+#resolvemos un problema de mínimos cuadrados regularizado
 def fit_z_coefficients_to_dipole(
     kmax: int,
     t0: float = T0_Z_DEFAULT,
@@ -158,7 +164,7 @@ def fit_z_coefficients_to_dipole(
     coeffs = np.linalg.solve(gram + ridge_lambda * np.eye(kmax), rhs)
     return coeffs
 
-
+#definimos la expansión z 
 def ga_z_expansion(
     q2: np.ndarray | float,
     coeffs: np.ndarray,
@@ -178,7 +184,7 @@ def ga_z_expansion(
 
     return g_a0 * series
 
-
+#definimos el radio axial a partir de la expansión z. Esto es totalmente complementario, no se trata en la memoria
 def axial_radius_from_z_coeffs(
     coeffs: np.ndarray,
     t0: float = T0_Z_DEFAULT,
@@ -199,7 +205,14 @@ def axial_radius_from_z_coeffs(
     # Como G_A = g_A * norm, <r_A^2> = -6 d(norm)/dQ^2.
     return -6.0 * d_norm_dq2
 
+#diagnóstico de estabilidad de la expansión z
+#calcula ratios entre la curva de expansión z y el dipolo y devuelve:
+#ratio minimo
+#ratio maximo
+#ratio en el extremo final
+#coeficiente maximo en valor absoluto
 
+#Todo esto sirve para advertir al usuario cuando ha elegido coeficientes demasiado grandes y la curva se vuelve físicamente poco razonable
 def z_ratio_diagnostics(
     q2: np.ndarray,
     coeffs: np.ndarray,
@@ -216,19 +229,22 @@ def z_ratio_diagnostics(
         "ratio_at_q2max": float(ratio[-1]),
         "max_abs_coeff": float(np.nanmax(np.abs(coeffs))) if len(coeffs) else 0.0,
     }
-
-
+###IMPORTANTE. Como la expansión z es muy flexible, tuve que incluir diagnosticos para evitar interpretaciones ingenuas.
+#Si los coeficientes generan una curva que se separa demasiado del dipolo la app lanza una advertencia. De hecho salta un error.
+#De esta forma se mantiene el carácter interactivo, pudiendo explorar pero con control físico
 def q2_from_log_bounds(q2_log_min: float, q2_log_max: float) -> tuple[float, float]:
     """Convierte límites logarítmicos a límites en GeV^2."""
     return 10.0 ** float(q2_log_min), 10.0 ** float(q2_log_max)
 
-
+#Relacion entre GP y GA mediante PCAC
+#Una vez elegida GA, la app calcula automaticamente GP usando esta relación.
+#Las diferencias en el FF axial se trasladan automáticamente al pseudoescalar
 def gp_pcac(q2: np.ndarray | float, ga_values: np.ndarray | float) -> np.ndarray:
     q2 = np.asarray(q2, dtype=float)
     ga_values = np.asarray(ga_values, dtype=float)
     return (4.0 * M_N**2 / (q2 + M_PI**2)) * ga_values
 
-
+#Normalizaciones utilizadas en las gráficas:
 def normalized_ga(ga_values: np.ndarray | float) -> np.ndarray:
     return np.asarray(ga_values) / G_A0
 
@@ -237,12 +253,14 @@ def normalized_gp(gp_values: np.ndarray | float) -> np.ndarray:
     # Esto reproduce la normalización positiva y adimensional.
     return np.asarray(gp_values) * M_PI**2 / (4.0 * M_N**2 * G_A0)
 
-
+#Malla de Q2. Se usa escala logaritmica
 def safe_geomspace(q2_min: float, q2_max: float, n: int = 800) -> np.ndarray:
-    q2_min = max(float(q2_min), 1.0e-6)
+    q2_min = max(float(q2_min), 1.0e-6) #el 10^-6 impuesto para evitar Q2=0 no definido, por supuesto 
     q2_max = max(float(q2_max), q2_min * 1.001)
     return np.geomspace(q2_min, q2_max, n)
-
+#por qué no usamos directamente np.linspace?
+#Porque el rango de Q2 puede ir desde valores muy pequeños hasta varios GeV^2.
+#Por lo tanto una escala logaritmica permite ver bien taqnto la zona de bajo Q2 como la de alto Q2
 
 def pct_change(new: float, old: float) -> float:
     if old == 0:
@@ -250,7 +268,10 @@ def pct_change(new: float, old: float) -> float:
     return 100.0 * (new - old) / old
 
 
-
+#Tablas resumen
+#Calculan valores numericos de GA y GP y ratios para un valor concreto de Q2. 
+#Esto le permite al usuario no ver solo la grafica, sino también numeros concretos.
+#La app permite entonces inspeccionar un valor concreto de Q2 y ver cuántitativamente cuánto cambia una parametrización respecto la otra
 def make_summary_table(q2_point: float, m_a_selected: float, m_a_reference: float, model_name: str) -> pd.DataFrame:
     if model_name == "Dipolar":
         ga_fn = ga_dipole
@@ -286,11 +307,13 @@ def make_summary_table(q2_point: float, m_a_selected: float, m_a_reference: floa
         }
     )
 
+#estilo comun a todas las figuras, con escala logarítmica
 def _apply_common_axes_style(ax: plt.Axes, xscale: str = "log") -> None:
     ax.set_xscale(xscale)
     ax.grid(True, which="both", alpha=0.25)
     ax.tick_params(direction="in", top=True, right=True)
 
+#Pintamos todas las gráficas que se ven en la app:
 
 def plot_form_factors(
     q2: np.ndarray,
@@ -948,6 +971,7 @@ def inject_css() -> None:
         unsafe_allow_html=True,
     )
 
+# Definimos una función que nos va a permitir descargarnos las figuras que aparecen en la app
 
 def figure_to_bytes(fig: plt.Figure, file_format: str) -> bytes:
     buffer = io.BytesIO()
@@ -958,7 +982,7 @@ def figure_to_bytes(fig: plt.Figure, file_format: str) -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
-
+#esto permite descargar tanto en pdf vectorial como en png:
 def render_figure_download_buttons(fig: plt.Figure, basename: str) -> None:
     safe_name = basename.replace(" ", "_").replace("/", "_")
     with st.expander("Descargar esta gráfica", expanded=False):
@@ -979,14 +1003,16 @@ def render_figure_download_buttons(fig: plt.Figure, basename: str) -> None:
                 mime="image/png",
                 key=f"download_{safe_name}_png",
             )
+#--------------------------------------------------------------------------------------------------------------------
+#Ahora definimos la interfaz de la app
 
-
+#cabecera de la app
 def section_header(title: str, body: str | None = None) -> None:
     st.markdown(f"## {title}")
     if body:
         st.markdown(body)
 
-
+#pestaña del formalismo 
 def render_formalism_tab() -> None:
     section_header(
         "Formalismo y notación",
@@ -1012,7 +1038,7 @@ def render_formalism_tab() -> None:
     #    st.markdown(
      #       "Porque es pedagógicamente útil comparar formas funcionales. La literatura adopta habitualmente un ansatz dipolar, pero contrastarlo con un perfil monopolar ayuda al lector a ver que la cuestión no es solo el valor de la masa axial, sino también la forma funcional asumida para la dependencia axial con el momento transferido."
        # )
-
+#pestaña para dos componentes
 def render_two_component_model_tab() -> None:
     section_header(
         "Modelo de dos componentes",
@@ -1108,7 +1134,7 @@ def render_two_component_model_tab() -> None:
             r"las observables y secciones eficaces que dependen de él."
         )
 
-
+#pestaña para dipolar y monopolar
 def render_dipole_monopole_comparison_tab() -> None:
     section_header(
         "Comparación entre parametrizaciones dipolar y monopolar",
@@ -1333,7 +1359,7 @@ def render_simulator_tab() -> None:
             "La primera figura muestra los factores de forma normalizados con el estilo del TFG. La segunda responde a una pregunta práctica: "
             "**¿cuánto cambia la física respecto a una elección de referencia de la masa axial?**"
         )
-
+#pestaña para 3BA07
 def render_bbba07_tab() -> None:
     section_header(
         "Parametrización BBBA2007",
@@ -1437,7 +1463,7 @@ def render_bbba07_tab() -> None:
             r"Esta comparación es útil porque BBBA2007 no modifica la normalización $G_A(0)=g_A$, sino la forma de la curva a $Q^2$ finito."
         )
 
-
+#PEstaña para expansion z
 def render_z_expansion_tab() -> None:
     section_header(
         "Expansión z",
@@ -1664,7 +1690,7 @@ def render_z_expansion_tab() -> None:
             r"restricciones adicionales o un rango de validez más limitado."
         )
 
-
+#lo integramos todo 
 def render_axial_form_factors_page() -> None:
     inject_css()
 
