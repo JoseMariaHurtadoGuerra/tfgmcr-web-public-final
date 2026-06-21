@@ -1,24 +1,25 @@
-
-
+#app completa de cálculo de secciones eficaces, comparación entre modelos y comparación con MINERvA
+#Idea global: parametrizacion de los FF---> W_i ---> contraccion eta*W --->dsigma ---> sigma_total ---> dsigma/dQ2 promediado sobre el flujo de energía exp---> chi cuadrado MINERvA
+#esta app cierra el TFG. Parte de los FF vector y axial, constuye W_i, calcula la contracción etaW y obtiene las secciones eficaces diferenciales, totales y promediada sobre el flujo de energía
 from __future__ import annotations
 
-import importlib
-import inspect
-import io
+import importlib #para cargar GKeX
+import inspect #análogo
+import io #descarga de figuras
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import streamlit as st
+import matplotlib.pyplot as plt #para gráficas
+import numpy as np #calculo numerico
+import pandas as pd #tablas, datos exp, covarianzas
+import streamlit as st #interfaz de la web
 
 
-# =============================================================================
+
 # Constantes y unidades
-# =============================================================================
+
 
 G_F = 1.1663787e-5          # GeV^{-2}
 COS_CABIBBO = 0.97420
@@ -76,9 +77,12 @@ FM2_TO_1E_MINUS_13_FM2 = 1.0e13
 DEFAULT_Q2_MIN = 1.0e-4
 
 
-# =============================================================================
-# Utilidades de estilo
-# =============================================================================
+
+#Estilo y descargas. optimizamos
+#para que la app responda bien hay que optimizar la descarga de las figuras
+#estas se muestran siempre pero los arcchivos png y pdf vectorial solo se generan cuando el usuario activa la opción de descarga
+#de esta forma se evita racalcular muchos archivos pesados cada vez que se mueve un slider
+
 
 def setup_page() -> None:
     st.set_page_config(
@@ -188,27 +192,27 @@ def render_figure_download_buttons(fig: plt.Figure, basename: str) -> None:
                 key=f"download_{safe_name}_png",
             )
 
-
+#malla en Q2, igual que siempre
 def safe_geomspace(qmin: float, qmax: float, n: int = 700) -> np.ndarray:
     qmin = max(float(qmin), 1.0e-8)
     qmax = max(float(qmax), qmin * 1.001)
     return np.geomspace(qmin, qmax, n)
 
-
+#convertimos secciones calculadas en unidades naturales de GeV^-2 a unidades de 10^-13fm^2
 def to_1e_minus_13_fm2(value_gev_minus_2: np.ndarray | float) -> np.ndarray:
     """Convierte GeV^{-2} a unidades de 10^{-13} fm^2."""
     return np.asarray(value_gev_minus_2, dtype=float) * GEV2_TO_FM2 * FM2_TO_1E_MINUS_13_FM2
 
 
-# =============================================================================
-# Factores de forma electromagnéticos y vectores
-# =============================================================================
 
+# Factores de forma electromagnéticos y vectores
+
+#dipolar de galster
 def dipole_vector(q2: np.ndarray | float) -> np.ndarray:
     q2 = np.asarray(q2, dtype=float)
     return 1.0 / (1.0 + q2 / M_V**2) ** 2
 
-
+ #definimos los FF EM para la parametrizacion dipolar de Galster
 def sachs_galster(q2: np.ndarray | float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Parametrización Galster/dipolar para los factores de Sachs EM."""
     q2 = np.asarray(q2, dtype=float)
@@ -222,7 +226,7 @@ def sachs_galster(q2: np.ndarray | float) -> tuple[np.ndarray, np.ndarray, np.nd
 
     return g_ep, g_mp, g_en, g_mn
 
-
+#la app carga la parametrización GKeX encontrándola en src/form_factors_gkex.py
 def _coerce_gkex_output(out, q2: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Acepta varias salidas posibles de una función sachs_gkex del proyecto."""
     if isinstance(out, dict):
@@ -342,13 +346,13 @@ def sachs_gkex_required(q2: np.ndarray | float) -> tuple[np.ndarray, np.ndarray,
             "No se usará ningún modelo de respaldo."
         ) from exc
 
-
+#devuelve los FF EM usando la parametrizacion de GKeX
 def sachs_form_factors(q2: np.ndarray | float, model: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     if model == "Galster":
         return sachs_galster(q2)
     return sachs_gkex_required(q2)
 
-
+#construimos los FF de sachs como combinación lineal de los FF EM (hipótesis CVC)
 def vector_dirac_pauli_isovector(q2: np.ndarray | float, model: str) -> tuple[np.ndarray, np.ndarray]:
     """Construye F_1^V y F_2^V desde Sachs isovectoriales, con el factor 1/2 usado en el TFG."""
     q2 = np.asarray(q2, dtype=float)
@@ -365,10 +369,10 @@ def vector_dirac_pauli_isovector(q2: np.ndarray | float, model: str) -> tuple[np
     return f1v, f2v
 
 
-# =============================================================================
-# Factores de forma axiales
-# =============================================================================
 
+# Factores de forma axiales
+
+#Copia y pega de lo que ya hicimos en la app_axial. Reutilizamos los modelos de la app axial
 def ga_dipole(q2: np.ndarray | float, m_a: float = M_A_STD) -> np.ndarray:
     """Factor de forma axial dipolar."""
     q2 = np.asarray(q2, dtype=float)
@@ -520,15 +524,14 @@ def select_axial_model(
     return ga, gp
 
 
-# =============================================================================
-# Cinemática elástica libre
-# =============================================================================
+# Cinemática elástica libre. 
 
+#definimos el módulo del momento del lepton saliente. Simplemente contracción de su cuadrimomento consigo mismo
 def lepton_momentum(e_mu: np.ndarray | float, m_l: float = M_MU) -> np.ndarray:
     e_mu = np.asarray(e_mu, dtype=float)
     return np.sqrt(np.maximum(e_mu**2 - m_l**2, 0.0))
 
-
+#restricción cinemática para el coseno de theta0. Reescritura de la delta de conservación del cuadrimomento
 def cos_theta0_from_emu(e_nu: float, e_mu: np.ndarray | float, m_l: float = M_MU) -> np.ndarray:
     e_mu = np.asarray(e_mu, dtype=float)
     k_mu = lepton_momentum(e_mu, m_l)
@@ -575,7 +578,10 @@ def solve_emu_from_theta(e_nu: float, theta: float, m_l: float = M_MU) -> float:
 
     return 0.5 * (a + b)
 
-
+#Importante. La app tiene dos formas de construir la cinemática. Esta cinemática es solo válida para el nucleón libre inicial en reposo
+# parte de una malla de ángulos y resuelve E_mu por bisección:
+#la bisección se usa para resolver la condición elástica costheta0(E_mu)=costheta y marca como válidos solo puntos donde se cumpla:
+# E_mu>m_mu. w>0 y Q2>0
 def kinematics_from_theta_grid(e_nu: float, theta_deg: np.ndarray, m_l: float = M_MU) -> pd.DataFrame:
     theta_rad = np.deg2rad(theta_deg)
 
@@ -599,7 +605,7 @@ def kinematics_from_theta_grid(e_nu: float, theta_deg: np.ndarray, m_l: float = 
         }
     )
 
-
+# o parte de una malla en E_mu y calcula costheta0 manteniendo solo puntos físicos con modulo de costheta0<=1
 def kinematics_from_energy_grid(e_nu: float, e_mu_grid: np.ndarray, m_l: float = M_MU) -> pd.DataFrame:
     e_mu = np.asarray(e_mu_grid, dtype=float)
     k_mu = lepton_momentum(e_mu, m_l)
@@ -632,10 +638,15 @@ def kinematics_from_energy_grid(e_nu: float, e_mu_grid: np.ndarray, m_l: float =
     )
 
 
-# =============================================================================
+#Resumen: para cada E_mu si quiero representar en función del ángulo resuelvo numéricamente E_mu imponiendo la condición elástica.
+
+  ###### si quiero representar en función de E_mu calculo costheta0 y descarto los puntos no fisicos con modulo costheta0>=1
+
 # Funciones W_i, contracción y secciones eficaces
 # =============================================================================
 
+#con esto agrupamos todos los parámetros físicos de una configuración. 
+#así se evita pasar muchos argumentos sueltos de forma desordenada
 @dataclass(frozen=True)
 class CrossSectionConfig:
     vector_model: str = "Galster"
@@ -645,11 +656,11 @@ class CrossSectionConfig:
     use_cabibbo: bool = False
     include_muon_mass: bool = True
 
-
+#constante de Fermi
 def effective_gf(use_cabibbo: bool) -> float:
     return G_F * (COS_CABIBBO if use_cabibbo else 1.0)
 
-
+#definimos las funciones de estructura W_i
 def structure_functions_wi(
     q2_abs: np.ndarray | float,
     vector_model: str,
@@ -674,7 +685,7 @@ def structure_functions_wi(
 
     return w1, w2, w3, w4, w5
 
-
+#contraccion etaW
 def contraction_eta_w(
     e_nu: float,
     e_mu: np.ndarray | float,
@@ -716,7 +727,7 @@ def recoil_factor(e_nu: float, e_mu: np.ndarray | float, cos_theta: np.ndarray |
 
     return 1.0 + e_nu * (k_mu - e_mu * cos_theta) / (M_N * np.maximum(k_mu, 1.0e-15))
 
-
+#definición de la sección eficaz angular a partir de la cinemática
 def dsigma_domega_from_kinematics(df: pd.DataFrame, e_nu: float, config: CrossSectionConfig, beam: str) -> np.ndarray:
     gf = effective_gf(config.use_cabibbo)
     valid = df["valid"].to_numpy(dtype=bool)
@@ -730,12 +741,15 @@ def dsigma_domega_from_kinematics(df: pd.DataFrame, e_nu: float, config: CrossSe
     frec = recoil_factor(e_nu, e_mu, cos_theta, config)
 
     ds = (gf**2 / (4.0 * np.pi**2)) * (k_mu / e_nu) * contr / np.maximum(frec, 1.0e-15)
-    ds = to_1e_minus_13_fm2(ds)
-
+    ds = to_1e_minus_13_fm2(ds) #para pasar de unidades naturales a fm
+#con esto eliminamos los puntos fuera de la región física
     ds[~valid] = np.nan
     ds[ds < 0] = np.nan
     return ds
 
+#definición de la seccion eficaz en funcion de la energía del lepton saliente a partir del mallado
+#en vez de resolver para cada ángulo, como en el caso anterior, se recorre una malla de energías finales E_mu para calcular el
+#ángulo elástico asociado a costheta0 para luego descartar valores no físicos, evaluando la contraccion tensorial
 
 def dsigma_demu_from_energy_grid(df: pd.DataFrame, e_nu: float, config: CrossSectionConfig, beam: str) -> np.ndarray:
     """Sección diferencial dσ/dE_mu según la forma integrada de la subsección 3.8.
@@ -757,7 +771,13 @@ def dsigma_demu_from_energy_grid(df: pd.DataFrame, e_nu: float, config: CrossSec
     ds[ds < 0] = np.nan
     return ds
 
-
+#seción eficaz total
+#esta función:
+#comprueba si E_nu<=m_mu. De ser así, devuelve 0
+#construye una malla en E_mu
+#calcula dsigma/demu
+#se queda solo con los puntos validos
+#integra con np.trapezoid
 def total_cross_section_from_energy(
     e_nu: float,
     config: CrossSectionConfig,
@@ -787,7 +807,7 @@ def total_cross_section_from_energy(
 
     return float(np.trapezoid(ds[valid], e_mu_grid[valid]))
 
-
+#función caché para que la app responda
 @st.cache_data(show_spinner=False, max_entries=2048)
 def total_cross_section_from_energy_cached(
     e_nu: float,
@@ -811,7 +831,9 @@ def total_cross_section_from_energy_cached(
     )
     return total_cross_section_from_energy(float(e_nu), cfg, beam=beam, n_grid=int(n_grid))
 
-
+#con esta función se evita invalidar caché cuando el slider no afecta al modelo seleccionado. Por ejemplo:
+#si estamos usando dipolo estándar, mover el slider de MA no debería forzar recalcular
+#si usamos monopolar sí importa MAtilde
 def _relevant_axial_parameters(axial_model: str, m_a: float, m_a_tilde: float) -> tuple[float, float]:
     """Evita invalidar caches cuando un slider no afecta al modelo seleccionado."""
     m_a_eff = float(m_a) if axial_model == "Dipolo con M_A variable" else M_A_STD
@@ -1585,7 +1607,7 @@ la parametrización axial.
 # =============================================================================
 # MINERvA hidrógeno: datos, plegado en flujo y comparación experimental
 # =============================================================================
-
+#busca columnas por ejemplo: Q2low, Q2Low, Q2_low
 def find_col(df: pd.DataFrame, candidates: list[str]) -> str:
     """Busca columnas de forma robusta, ignorando espacios y mayúsculas."""
     cols = list(df.columns)
@@ -1610,7 +1632,7 @@ def find_col(df: pd.DataFrame, candidates: list[str]) -> str:
 
     raise KeyError(f"No encuentro columnas {candidates}. Columnas disponibles: {list(df.columns)}")
 
-
+#elige la columna que empieza por flux( o sino busca flux o phi
 def pick_flux_col(df: pd.DataFrame) -> str:
     """Selecciona la columna de flujo del CSV de MINERvA."""
     for c in df.columns:
@@ -1639,7 +1661,9 @@ def resolve_project_root_for_minerva() -> Path:
     # Si no se encuentra, se devuelve cwd para que el mensaje de error sea claro.
     return cwd
 
-
+#lee una matriz (proporcionada por el paper) aunque el CSV venga con una fila o columna extra de cabecera. Si la matriz tiene forma
+#(n,n+1), (n+1,n), (n+1,n+1) el código recorta la fila o columna sobrante, exigiendo que la matriz final sea (n,n)
+#ademas se reescalan las covarianzas (ver más abajo)
 def read_cov_matrix_minerva(path: Path, n: int) -> np.ndarray:
     """Lee la matriz de covarianza aunque el CSV venga sin cabecera real."""
     V = pd.read_csv(path, header=None).to_numpy(dtype=float)
@@ -1656,7 +1680,7 @@ def read_cov_matrix_minerva(path: Path, n: int) -> np.ndarray:
 
     return V
 
-
+# cargamos los 3 archivos que vamos a utilizar
 @st.cache_data(show_spinner=False)
 def load_minerva_hydrogen_inputs() -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     """Carga datos, flujo y covarianza total de MINERvA-H."""
@@ -1722,7 +1746,7 @@ def load_minerva_hydrogen_inputs() -> tuple[pd.DataFrame, pd.DataFrame, np.ndarr
 
     return bins_df, flux_df, Vtot
 
-
+#esta función añade refs/minerva_hydrogen/cov_stat.csv
 @st.cache_data(show_spinner=False)
 def load_minerva_hydrogen_stats_inputs() -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
     """Carga datos, flujo, covarianza total y covarianza estadística de MINERvA-H."""
@@ -1747,7 +1771,9 @@ def load_minerva_hydrogen_stats_inputs() -> tuple[pd.DataFrame, pd.DataFrame, np
 
     return bins_df, flux_df, Vtot, Vstat
 
-
+#matriz de correlación 
+#a partir de las covarianzas se construye las matrices de correlacion para visualizar cuánto están correlacionados los bins
+#esto permite entender por qué el chi cuadrado con covarianza total peude ser muy distinto del chi cuadrado usando solo errores estadísticos
 def correlation_from_covariance(V: np.ndarray) -> np.ndarray:
     """Construye la matriz de correlación a partir de una covarianza."""
     diag = np.sqrt(np.clip(np.diag(V), 0.0, None))
@@ -1759,13 +1785,13 @@ def correlation_from_covariance(V: np.ndarray) -> np.ndarray:
     return np.clip(rho, -1.0, 1.0)
 
 
-
+#cortes cinemáticos dados por minerva
 def passes_minerva_hydrogen_cuts(E_mu: np.ndarray, cos_theta: np.ndarray) -> np.ndarray:
     """Cortes cinemáticos usados para la comparación MINERvA-H."""
     theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
     return (E_mu > 1.5) & (E_mu < 20.0) & (theta < 20.0 * np.pi / 180.0)
 
-
+#pasamos de dsigmademu a dsigmadQ2 a partir del jacobiano
 def dsigma_dQ2_tensor_minerva_units(
     E_nu: float,
     Q2: np.ndarray | float,
@@ -1777,7 +1803,6 @@ def dsigma_dQ2_tensor_minerva_units(
 
     Se obtiene desde el formalismo tensorial de esta app. Primero se evalúa
     dσ/dE_mu y después se usa dE_mu/dQ² = -1/(2M) en cinemática elástica libre.
-    No se usa la fórmula compacta de Llewellyn-Smith.
     """
     Q2 = np.asarray(Q2, dtype=float)
     scalar_input = (Q2.ndim == 0)
@@ -1816,7 +1841,16 @@ def dsigma_dQ2_tensor_minerva_units(
         return np.asarray(ds_dQ2_minerva[0])
     return ds_dQ2_minerva
 
-
+#promediado sobre el flujo experimental.
+#Para cada bin de Q2 hace:
+#filtra el flujo hasta E_nu max
+#interpola el flujo en una malla de energías
+#normaliza por flujo total
+#para cada energía E_nu integra dsigma/dQ2 dentro del bin
+#multiplica por el flujo
+#integra en energía
+#divide por el flujo total
+#divide por la anchura del bin
 def flux_folded_minerva_tensor_prediction(
     q2_low: np.ndarray,
     q2_high: np.ndarray,
@@ -1868,7 +1902,7 @@ def flux_folded_minerva_tensor_prediction(
 
     return pred
 
-
+#calcula chicuadrado con la matriz de covarianza total V^-1
 def covariance_chi2(data: np.ndarray, model: np.ndarray, V: np.ndarray) -> float:
     """χ² con matriz de covarianza total."""
     r = np.asarray(data, dtype=float) - np.asarray(model, dtype=float)
