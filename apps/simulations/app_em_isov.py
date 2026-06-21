@@ -4,15 +4,15 @@ from io import BytesIO
 
 import inspect
 import sys
-from pathlib import Path
+from pathlib import Path  # construimos rutas de archivos de forma robusta
 from typing import Any
 
-import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib.pyplot as plt  #para hacer las gráficas
+import numpy as np   #para cálculos numéricos, arrays, mallas de Q2, operaciones vectorizadas...
 import pandas as pd  #lee y maneja los CSV de datos experimentales. Usado luego para leer los datos de Raúl
-import streamlit as st
+import streamlit as st  #con esto podemos hacer la interfaz de la web interactiva. Es importante
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2] #Localiza la raíz del proyecto. parents[0]---apps/simulations, parents [1]---apps y parents[2]----raíz del proyecto
+PROJECT_ROOT = Path(__file__).resolve().parents[2] #Localiza la raíz del proyecto. parents[0]---apps/simulations, parents [1]---apps y parents[2]----raíz del proyecto en github
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -39,7 +39,7 @@ LAMBDA_N_STD = 5.6  #lambda estandar. (ver mi TFG)
 
 EXPECTED_COLUMNS = {"panel", "Q2", "y"} #Cuando la app lea un CSV de puntos experimentales va a exigir al menos estas tres columnas. Q2 indica el valor de |q2|, y indica el valor experimental normalizado
 #panel indica si el punto pertenece a alguno de estos Sachs:
-PANEL_ORDER = ["GEp", "GMp", "GEn", "GMn"]
+PANEL_ORDER = ["GEp", "GMp", "GEn", "GMn"]  #Esto permite que todos los puntos experimentales se clasifiquen automáticamente en uno de los cuatro paneles de EM
 PANEL_LABELS = {
     "GEp": r"$G_E^p/G_D^{\rm ref}$",
     "GMp": r"$G_M^p/(\mu_p G_D^{\rm ref})$",
@@ -156,7 +156,7 @@ def gkex_sachs(Q2: np.ndarray | float) -> dict[str, np.ndarray] | None:
         return {k: v[0] for k, v in stacked.items()}
     return stacked #lógicamente, si la entrada era un numero, devuelve un numero. Si era un array, devuelve un array
 
-#Con esto de aquí buscamos archivos CSV candidatos para cargar los datos experimentales
+#Con esto de aquí buscamos archivos CSV candidatos para cargar los datos experimentales 
 def _load_points_from_candidates(candidates: list[Path]) -> pd.DataFrame | None:
     seen: set[str] = set() #guarda rutas de archivos ya probadas para no repetir
     for candidate in candidates: #recorre posibles archivos
@@ -179,6 +179,9 @@ def _load_points_from_candidates(candidates: list[Path]) -> pd.DataFrame | None:
         df = df[df["panel"].isin(PANEL_ORDER)].sort_values(["panel", "Q2"])
         return df #devuelve el primer CSV valido encontrado y si no lo encuentra devuelve none
     return None
+
+#En resumen: No cargo los datos de forma ciega. La app busca varios CSV candidatos, comprueba que existen, evita duplicados, intenta leerlos con Pandas, 
+#valida que tengan las columnas mínimas y solo conserva los puntos cuyo panel corresponde a uno de los cuatro factores de Sachs que quiero representar.
 
 #Con esto de aquí cargamos los puntos experimentales, una vez ya encontrado el archivo CSV deseado
 def load_points_dataframe() -> pd.DataFrame | None:
